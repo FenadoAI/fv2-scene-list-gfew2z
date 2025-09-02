@@ -35,6 +35,19 @@ class StatusCheck(BaseModel):
 class StatusCheckCreate(BaseModel):
     client_name: str
 
+class Todo(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    text: str
+    completed: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class TodoCreate(BaseModel):
+    text: str
+
+class TodoUpdate(BaseModel):
+    text: str = None
+    completed: bool = None
+
 # Add your routes to the router instead of directly to app
 @api_router.get("/")
 async def root():
@@ -51,6 +64,33 @@ async def create_status_check(input: StatusCheckCreate):
 async def get_status_checks():
     status_checks = await db.status_checks.find().to_list(1000)
     return [StatusCheck(**status_check) for status_check in status_checks]
+
+# Todo endpoints
+@api_router.post("/todos", response_model=Todo)
+async def create_todo(todo: TodoCreate):
+    todo_dict = todo.dict()
+    todo_obj = Todo(**todo_dict)
+    await db.todos.insert_one(todo_obj.dict())
+    return todo_obj
+
+@api_router.get("/todos", response_model=List[Todo])
+async def get_todos():
+    todos = await db.todos.find().sort("created_at", -1).to_list(1000)
+    return [Todo(**todo) for todo in todos]
+
+@api_router.put("/todos/{todo_id}", response_model=Todo)
+async def update_todo(todo_id: str, todo_update: TodoUpdate):
+    update_data = {k: v for k, v in todo_update.dict().items() if v is not None}
+    await db.todos.update_one({"id": todo_id}, {"$set": update_data})
+    updated_todo = await db.todos.find_one({"id": todo_id})
+    if updated_todo:
+        return Todo(**updated_todo)
+    return None
+
+@api_router.delete("/todos/{todo_id}")
+async def delete_todo(todo_id: str):
+    result = await db.todos.delete_one({"id": todo_id})
+    return {"deleted": result.deleted_count > 0}
 
 # Include the router in the main app
 app.include_router(api_router)
